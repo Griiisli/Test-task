@@ -1,6 +1,6 @@
 # Test-task
 
-E2E-тести (Playwright) для воронки квізу `dvrcres0lve.dev` → редірект на YourForms.
+Юзер-сценарії (Playwright) для воронки квізу `dvrcres0lve.dev` → редирект на YourForms.
 
 ## Структура
 
