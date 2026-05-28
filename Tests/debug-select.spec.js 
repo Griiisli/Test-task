@@ -1,0 +1,72 @@
+// tests/tests/debug-select.spec.js
+const { test } = require('@playwright/test');
+
+test('DEBUG | Inspect mat-select on q5', async ({ page }) => {
+  await page.goto('/quiz?step=q5');
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1500);
+
+  // Дамп всієї структури mat-select і батьків
+  const info = await page.evaluate(() => {
+    const results = [];
+
+    document.querySelectorAll('mat-select').forEach((el, i) => {
+      // Перевіряємо видимість через весь ланцюг батьків
+      let node = el;
+      const chain = [];
+      while (node && node !== document.body) {
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        chain.push({
+          tag: node.tagName + (node.className ? '.' + [...node.classList].join('.') : ''),
+          display: style.display,
+          visibility: style.visibility,
+          opacity: style.opacity,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+        });
+        node = node.parentElement;
+      }
+
+      const rect = el.getBoundingClientRect();
+      results.push({
+        index: i,
+        id: el.id,
+        classList: [...el.classList],
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+        ariaExpanded: el.getAttribute('aria-expanded'),
+        parentChain: chain.slice(0, 6), // перші 6 рівнів
+      });
+    });
+
+    // Також шукаємо будь-які select/dropdown елементи
+    const allSelects = [
+      ...document.querySelectorAll('select'),
+      ...document.querySelectorAll('[role="listbox"]'),
+      ...document.querySelectorAll('[role="combobox"]'),
+      ...document.querySelectorAll('.mat-mdc-select-trigger'),
+      ...document.querySelectorAll('.mat-select-trigger'),
+    ].map(el => {
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return {
+        tag: el.tagName,
+        class: [...el.classList].join(' '),
+        role: el.getAttribute('role'),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+        display: style.display,
+        visibility: style.visibility,
+      };
+    });
+
+    return { matSelects: results, allDropdowns: allSelects };
+  });
+
+  console.log('\n=== MAT-SELECT DETAILS ===');
+  console.log(JSON.stringify(info.matSelects, null, 2));
+  console.log('\n=== ALL DROPDOWNS ===');
+  console.log(JSON.stringify(info.allDropdowns, null, 2));
+
+  // Скріншот для візуальної перевірки
+  await page.screenshot({ path: 'tests/quiz-map/debug-q5-select.png', fullPage: true });
+  console.log('\n📸 Скріншот збережено: tests/quiz-map/debug-q5-select.png');
+});
