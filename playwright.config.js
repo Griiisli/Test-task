@@ -3,7 +3,9 @@ const { defineConfig } = require('@playwright/test');
 module.exports = defineConfig({
   testDir: './tests',
   timeout: 120000,
-  retries: 0,
+  // Живий сайт інколи "роняє" браузер (Target page closed) — один retry
+  // прибирає цей періодичний flaky-збій, не маскуючи реальні падіння.
+  retries: 1,
   // E2E проти живого сайту з headless:false — кілька паралельних браузерів
   // конкурують за ресурси та повільні API-запити (county dropdown тощо),
   // через що кроки стають flaky. Виконуємо тести послідовно.
@@ -13,6 +15,7 @@ module.exports = defineConfig({
     baseURL: 'https://dvrcres0lve.dev',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    trace: 'on-first-retry',
     actionTimeout: 10000,
   },
   reporter: [['list'], ['html', { open: 'never' }]],

@@ -10,6 +10,7 @@ const { completeQuiz } = require('./helpers/quiz.helper');
 
 const BASE_URL = 'https://dvrcres0lve.dev/';
 const HERO_CTA = 'section[aria-label="Hero"] button';
+const YOURFORMS = /yrf0rms\.dev|yourforms\.com/;
 
 test.describe('Scenario 1: Happy Path — full quiz flow to redirect', () => {
 
@@ -19,7 +20,6 @@ test.describe('Scenario 1: Happy Path — full quiz flow to redirect', () => {
   // Якщо падає: сайт недоступний або зламана верстка hero-секції.
   test('TC-1.1 | Landing page loads and hero CTA is visible', async ({ page }) => {
     await page.goto(BASE_URL);
-    await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveTitle(/DivorceResolve/i);
 
@@ -28,32 +28,18 @@ test.describe('Scenario 1: Happy Path — full quiz flow to redirect', () => {
   });
 
   // ── TC-1.2 ──────────────────────────────────────────────────────
-  // Клік по hero CTA навігує на /quiz.
-  // Angular router → waitForURL замість waitForNavigation.
-  // Якщо падає: routerLink="/quiz" зламаний або змінили маршрут.
-  test('TC-1.2 | Click hero CTA navigates to /quiz', async ({ page }) => {
+  // Перший крок квізу (Intro) рендериться коректно після кліку hero CTA.
+  // Навігація hero → /quiz перевіряється тут (а також у scenario-3 для всіх CTA),
+  // тому окремого тесту лише на навігацію не тримаємо.
+  // Якщо падає: маршрут /quiz зламаний або JS-помилка блокує рендер intro.
+  test('TC-1.2 | Quiz intro step renders correctly', async ({ page }) => {
     await page.goto(BASE_URL);
-    await page.waitForLoadState('networkidle');
-
-    const heroCta = page.locator(HERO_CTA).filter({ hasText: 'Check Eligibility' });
-    await heroCta.click();
-
-    await expect(page).toHaveURL(/\/quiz/);
-  });
-
-  // ── TC-1.3 ──────────────────────────────────────────────────────
-  // Перший крок квізу (Intro) рендериться коректно.
-  // Якщо падає: квіз завантажується але JS-помилка блокує рендер.
-  test('TC-1.3 | Quiz intro step renders correctly', async ({ page }) => {
-    await page.goto(BASE_URL);
-    await page.waitForLoadState('networkidle');
 
     const heroCta = page.locator(HERO_CTA).filter({ hasText: 'Check Eligibility' });
     await heroCta.click();
     await expect(page).toHaveURL(/\/quiz/);
-    await page.waitForLoadState('networkidle');
 
-    // Continue кнопка має бути видима на intro-кроці
+    // Continue кнопка має бути видима та активна на intro-кроці
     const continueBtn = page.locator('.quiz__action button.large');
     await expect(continueBtn).toBeVisible();
     await expect(continueBtn).toBeEnabled();
@@ -63,39 +49,41 @@ test.describe('Scenario 1: Happy Path — full quiz flow to redirect', () => {
     await expect(page.locator('text=500')).not.toBeVisible();
   });
 
-  // ── TC-1.4 ──────────────────────────────────────────────────────
-  // Користувач може пройти всі 22 кроки квізу без помилок.
-  // Якщо падає: один з кроків зламаний — дивись stack trace на якому кроці.
-  test('TC-1.4 | User can complete all quiz steps', async ({ page }) => {
-    await page.goto(BASE_URL);
-    await page.waitForLoadState('networkidle');
+  // ── TC-1.3 / TC-1.4 ─────────────────────────────────────────────
+  // ОПТИМІЗАЦІЯ: повний прохід квізу виконується ОДИН раз у beforeAll
+  // (~50с), а не двічі. Якщо прохід зламано (beforeAll кидає) — обидва кейси
+  // падають; перевірки незалежні, тож одна не «пропускає» іншу.
+  test.describe('Full quiz traversal (single run)', () => {
+    let page;
+    let finalUrl;
 
-    const heroCta = page.locator(HERO_CTA).filter({ hasText: 'Check Eligibility' });
-    await heroCta.click();
-    await expect(page).toHaveURL(/\/quiz/);
-    await page.waitForLoadState('networkidle');
+    test.beforeAll(async ({ browser }) => {
+      page = await browser.newPage();
+      await page.goto(BASE_URL);
 
-    await completeQuiz(page);
-  });
+      const heroCta = page.locator(HERO_CTA).filter({ hasText: 'Check Eligibility' });
+      await heroCta.click();
+      await expect(page).toHaveURL(/\/quiz/);
 
-  // ── TC-1.5 ──────────────────────────────────────────────────────
-  // Після завершення квізу відбувається редирект на YourForms.
-  // ⭐ Найважливіший тест — перевіряє що воронка конвертує.
-  // Якщо падає: редирект зламаний → нульова конверсія.
-  test('TC-1.5 | After quiz completion user is redirected to YourForms', async ({ page }) => {
-    await page.goto(BASE_URL);
-    await page.waitForLoadState('networkidle');
+      await completeQuiz(page);
+      finalUrl = page.url();
+    });
 
-    const heroCta = page.locator(HERO_CTA).filter({ hasText: 'Check Eligibility' });
-    await heroCta.click();
-    await expect(page).toHaveURL(/\/quiz/);
-    await page.waitForLoadState('networkidle');
+    test.afterAll(async () => {
+      await page.close();
+    });
 
-    await completeQuiz(page);
+    // Користувач може пройти всі кроки квізу без помилок.
+    // Якщо падає: один з кроків зламаний — дивись stack trace у beforeAll.
+    test('TC-1.3 | User can complete all quiz steps', () => {
+      expect(finalUrl).toMatch(YOURFORMS);
+    });
 
-    // completeQuiz вже чекає на редирект всередині,
-    // але явно перевіряємо фінальний домен
-    await expect(page).toHaveURL(/yrf0rms\.dev|yourforms\.com/);
+    // ⭐ Найважливіший тест — перевіряє що воронка конвертує.
+    // Якщо падає: редирект зламаний → нульова конверсія.
+    test('TC-1.4 | After quiz completion user is redirected to YourForms', () => {
+      expect(new URL(finalUrl).hostname).toMatch(YOURFORMS);
+    });
   });
 
 });
